@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "",
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "includePath": [
+                "/home/jadon/xdbot_ws/devel/include/**",
+                "/home/jadon/catkin_ws/devel/include/**",
+                "/opt/ros/melodic/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_2f_gripper_action_server/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_2f_gripper_control/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_3f_gripper_articulated_gazebo_plugins/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_3f_gripper_control/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_ethercat/include/**",
+                "/home/jadon/catkin_ws/src/robotiq/robotiq_ft_sensor/include/**",
+                "/home/jadon/xdbot_ws/src/slamware/slamware_ros_sdk/include/**",
+                "/home/jadon/xdbot_ws/src/slamware/slamware_sdk/include/**",
+                "/home/jadon/catkin_ws/src/universal_robot/ur_kinematics/include/**",
+                "/home/jadon/xdbot_ws/src/manipulator_control/xdbot_manipulator_rosdriver/include/**",
+                "/home/jadon/xdbot_ws/src/xdbot_utils/xdbot_uin/include/**",
+                "/usr/include/**"
+            ],
+            "name": "ROS",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++14"
+        }
+    ],
+    "version": 4
+}

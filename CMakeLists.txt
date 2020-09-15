@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_eigen
   tf2_geometry_msgs
   tf2_ros
+  robotiq_3f_gripper_articulated_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -130,6 +131,9 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
+
+add_executable(pick_and_place_node src/pick_place.cpp)
+target_link_libraries(pick_and_place_node ${catkin_LIBRARIES})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}

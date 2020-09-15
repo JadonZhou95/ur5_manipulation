@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.15 0 0 0 -0.707107 0 0.707107 /ee_link grip_point 100" />
+</launch>
