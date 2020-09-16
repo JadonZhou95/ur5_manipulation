@@ -1,3 +1,7 @@
 <launch>
-    <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.15 0 0 0 -0.707107 0 0.707107 /ee_link grip_point 100" />
+    <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0 -0.707107 0 0.707107 /ee_link grip_point 100" />
+    <!-- <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0 0.70127 -0.19480 0.68577 /ee_link grip_point 100" /> -->
+    <!-- <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0 0 -0.2164396 0.976296 /ee_link grip_point 100" /> -->
+    <!-- <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0 -1.57080 0.4363 /ee_link grip_point 100" /> -->
+    <!-- <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0 -1.57080 0 /ee_link grip_point 100" /> -->
 </launch>
