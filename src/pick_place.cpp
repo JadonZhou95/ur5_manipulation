@@ -34,6 +34,7 @@ private:
         grip2ee_tf_;
 
     geometry_msgs::Pose object_pose_;
+    std::vector<geometry_msgs::Pose> object_poses_;
     short min_pose_read_count_;
     bool pose_update_flag_;
 
@@ -45,11 +46,15 @@ private:
     //!< The pose is identified only if it remains unchanged for a few readings
     geometry_msgs::Pose getPose();
     void poseCb(const geometry_msgs::PoseArrayConstPtr p_poses);
+    geometry_msgs::Pose averagePoses(const std::vector<geometry_msgs::Pose> &poses);
 
     //!< Control the gripper
+    void controlGripper(const std::string &cmd, double wait_time=3.0);
     void openGripper();
     void closeGripper();
-
+    void activateGripper();
+    void pinchGripper();
+    
     //!< Get Transfromation between frames
     void getTransformation(const std::string &target_frame,
                            const std::string &parent_frame,
@@ -73,34 +78,32 @@ public:
     {
         ROS_INFO("%s: Initializeing...", server_name_.c_str());
 
+        // Service client to control the gripper
         gripper_client_ = nh_.serviceClient<robotiq_3f_gripper_articulated_msgs::Robotiq3FGripperRobotControl>("/robotiq/control_robotiq_3f_gripper");
 
+        // Listen to the object pose
         pose_sub_ = nh_.subscribe<geometry_msgs::PoseArray>("/er_targets", 1,
                                                                    boost::bind(&PickPlacePlanner::poseCb, this, _1));
 
-        this->moveToNamedPose("wait");
-
         // capture the transformation between frames
-        // this->getTransformation("base_link", "camera_link", camera2arm_tf_);
-        this->getTransformation("ee_link", "grip_point", grip2ee_tf_);
+        this->getTransformation("ee_link", "object_link", grip2ee_tf_);
+        this->getTransformation("base_link", "zed_left_camera_frame", camera2arm_tf_);
 
+        // update the object pose
         min_pose_read_count_ = 5;
         pose_update_flag_ = false;
 
+        // initialize the arm and the gripper
+        this->moveToNamedPose("wait");
+        this->activateGripper();
+        this->pinchGripper();
+
         ROS_INFO("%s: Ready!", server_name_.c_str());
 
+        // main operation loop
         while(ros::ok())
         {
-            // geometry_msgs::Pose object_pose = this->getPose();
-            geometry_msgs::Pose object_pose;
-            object_pose.orientation.x = 0;
-            object_pose.orientation.y = 0;
-            object_pose.orientation.z = 0;
-            object_pose.orientation.w = 1;
-            object_pose.position.x = 0.4;
-            object_pose.position.y = 0;
-            object_pose.position.z = 0.2;
-
+            geometry_msgs::Pose object_pose = this->getPose();
             this->pick(object_pose);
             this->place();
         }
@@ -121,25 +124,23 @@ void PickPlacePlanner::pick(const geometry_msgs::Pose &pose)
     */
 
     // move to pre-grasp pose
+    ROS_INFO("%s: Move to Pre-Grasp Pose.", server_name_.c_str() );
     geometry_msgs::Pose pre_grasp_pose = pose;
     pre_grasp_pose.position.z += 0.05;
     this->transformPoseFromObjectToEE(pre_grasp_pose);
-    // this->moveToTargetPose(pre_grasp_pose);
     this->moveCatesianPath(std::vector<geometry_msgs::Pose>({pre_grasp_pose}));
 
     // move to grasp pose
+    ROS_INFO("%s: Move to Grasp Pose.", server_name_.c_str() );
     geometry_msgs::Pose grasp_pose = pose;
     grasp_pose.position.z -= 0.01;
     this->transformPoseFromObjectToEE(grasp_pose);
-    // this->moveToTargetPose(grasp_pose);
     this->moveCatesianPath(std::vector<geometry_msgs::Pose>({grasp_pose}));
 
     // close the gripper
     this->closeGripper();
 
     // move to pose-grasp pose
-    // this->transformPoseFromObjectToEE(pre_grasp_pose);
-    // this->moveToTargetPose(pre_grasp_pose);
     this->moveCatesianPath(std::vector<geometry_msgs::Pose>({pre_grasp_pose}));
 
     this->moveToNamedPose("wait");
@@ -160,30 +161,60 @@ geometry_msgs::Pose PickPlacePlanner::getPose()
     ros::Rate rate(10);
     short pose_read_count = 0;
     geometry_msgs::Pose object_pose_tmp = object_pose_;
+    object_poses_.clear();
 
     while (pose_read_count < min_pose_read_count_ && ros::ok())
     {
-        if (pose_update_flag_)
+        pose_update_flag_ = false;
+
+        while(ros::ok() && !pose_update_flag_)
+            rate.sleep();    
+
+        if (fabs(object_pose_.position.x - object_pose_tmp.position.x) < 0.05 &&
+            fabs(object_pose_.position.y - object_pose_tmp.position.y) < 0.05 &&
+            fabs(object_pose_.position.z - object_pose_tmp.position.z) < 0.05)
         {
-            if (fabs(object_pose_.position.x - object_pose_tmp.position.x) < 0.01 &&
-                fabs(object_pose_.position.y - object_pose_tmp.position.y) < 0.01 &&
-                fabs(object_pose_.position.z - object_pose_tmp.position.z) < 0.01)
-            {
-                pose_read_count++;
-            }
-            else
-            {
-                object_pose_tmp = object_pose_;
-                pose_read_count = 0;
-            }
+            pose_read_count++;
+            // object_poses_.push_back(object_pose_);
+        }
+        else
+        {
+            object_pose_tmp = object_pose_;
+            pose_read_count = 1;
+            object_poses_.clear();
+            // object_poses_.push_back(object_pose_);
         }
 
+        object_poses_.push_back(object_pose_);
         rate.sleep();
-        pose_update_flag_ = false;
     }
 
-    return object_pose_;
+    // return object_pose_;
+    return averagePoses(object_poses_);
 }
+
+geometry_msgs::Pose PickPlacePlanner::averagePoses(const std::vector<geometry_msgs::Pose> &poses)
+{
+    geometry_msgs::Pose pose;
+    pose.position.x = 0;
+    pose.position.y = 0;
+    pose.position.z = 0;
+
+    for (size_t i = 0; i < poses.size(); i++)
+    {
+        pose.position.x += poses[i].position.x;
+        pose.position.y += poses[i].position.y;
+        pose.position.z += poses[i].position.z;
+    }
+
+    pose.position.x /= poses.size();
+    pose.position.y /= poses.size();
+    pose.position.z /= poses.size();
+
+    pose.orientation = poses[0].orientation;
+    return pose;   
+}
+
 
 void PickPlacePlanner::poseCb(const geometry_msgs::PoseArrayConstPtr p_poses)
 {
@@ -275,21 +306,27 @@ int PickPlacePlanner::moveToNamedPose(const std::string &name)
     // std::vector<std::string> named_pose = {"wait", "pick", "wait", "drop", "wait"};
     ROS_INFO("%s: Move arm to Pose %s", server_name_.c_str(), name.c_str());
     std::map<std::string, double> joint_values = move_group_.getNamedTargetValues(name);
-    move_group_.setJointValueTarget(joint_values);
 
-    moveit::planning_interface::MoveGroupInterface::Plan my_plan;
-    bool success = (move_group_.plan(my_plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+    while(true)
+    {
+        move_group_.setJointValueTarget(joint_values);
 
-    if (success)
-    {
-        move_group_.move();
-        return 0;
+        moveit::planning_interface::MoveGroupInterface::Plan my_plan;
+        bool success = (move_group_.plan(my_plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+
+        if (success)
+        {
+            moveit_msgs::MoveItErrorCodes error_code = move_group_.move();
+            if (error_code.val == error_code.SUCCESS)
+                return 0;
+        }
+        else
+        {
+            ROS_ERROR("%s: Fail to move arm to Pose %s", server_name_.c_str(), name.c_str());
+            // return -1;
+        }
     }
-    else
-    {
-        ROS_ERROR("%s: Fail to move arm to Pose %s", server_name_.c_str(), name.c_str());
-        return -1;
-    }
+    return 0;
 }
 
 
@@ -318,45 +355,65 @@ int PickPlacePlanner::moveCatesianPath(const std::vector<geometry_msgs::Pose> &w
     moveit_msgs::RobotTrajectory trajectory;
     const double jump_threshold = 0.0;
     const double eef_step = 0.01;
-    double fraction = move_group_.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
 
-    if (fraction > 0.9)
+    while(true)
     {
-        move_group_.execute(trajectory);
-        return 0;
+        double fraction = move_group_.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+
+        if (fraction > 0.9)
+        {
+            moveit_msgs::MoveItErrorCodes error_code = move_group_.execute(trajectory);
+            if (error_code.val == error_code.SUCCESS)
+                return 0;
+        }
+        else
+        {
+            ROS_WARN("%s: Only %.2f of the catesian path can be completed.", server_name_.c_str(), fraction);
+            // return -1;
+        }
     }
-    else
-    {
-        ROS_WARN("%s: Only %.2f of the catesian path can be completed.", server_name_.c_str(), fraction);
-        return -1;
-    }
+    return 0;
+}
+
+void PickPlacePlanner::controlGripper(const std::string &cmd, double wait_time=3.0)
+{
+    robotiq_3f_gripper_articulated_msgs::Robotiq3FGripperRobotControl ser;
+    ser.request.command = cmd;
+    gripper_client_.call(ser);
+
+    ros::Duration(wait_time).sleep();
+    return;
 }
 
 void PickPlacePlanner::openGripper()
 {
-    robotiq_3f_gripper_articulated_msgs::Robotiq3FGripperRobotControl ser;
-    ser.request.command = "o";
-    gripper_client_.call(ser);
-
-    ros::Duration(3.0).sleep();
-    return;
+    ROS_INFO("Open Gripper");
+    this->controlGripper("o");
 }
 
 void PickPlacePlanner::closeGripper()
 {
-    robotiq_3f_gripper_articulated_msgs::Robotiq3FGripperRobotControl ser;
-    ser.request.command = "c";
-    gripper_client_.call(ser);
+    ROS_INFO("Close Gripper");
+    this->controlGripper("c");
+}
 
-    ros::Duration(3.0).sleep();
-    return;
+void PickPlacePlanner::activateGripper()
+{
+    ROS_INFO("Open Gripper");
+    this->controlGripper("a", 20);
+}
+
+void PickPlacePlanner::pinchGripper()
+{
+    ROS_INFO("Set Gripper in Mode Pinch");
+    this->controlGripper("p");
 }
 
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "moveit_pick_and_place_node");
 
-    ros::AsyncSpinner spinner(1);
+    ros::AsyncSpinner spinner(2);
     spinner.start();
 
     PickPlacePlanner pickPlacePlanner;
