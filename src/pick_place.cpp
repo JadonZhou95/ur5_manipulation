@@ -1,4 +1,5 @@
 #include <cmath>
+#include <list>
 
 #include "ros/ros.h"
 
@@ -31,11 +32,9 @@ private:
     ros::Subscriber pose_sub_;          //!< Subscriber to get the object pose
 
     geometry_msgs::TransformStamped camera2arm_tf_,
-        grip2ee_tf_;
+                                    grip2ee_tf_;
 
     geometry_msgs::Pose object_pose_;
-    std::vector<geometry_msgs::Pose> object_poses_;
-    short min_pose_read_count_;
     bool pose_update_flag_;
 
     //!< Pick and place
@@ -60,6 +59,7 @@ private:
                            const std::string &parent_frame,
                            geometry_msgs::TransformStamped &transform_stamped);
 
+    //!< Get the end-effector pose to grip objects
     void transformPoseFromObjectToEE(geometry_msgs::Pose &pose_out);
 
     //!< Move to named pose which is defined in .srdf
@@ -68,7 +68,13 @@ private:
     //!< Move to the target pose which is relative to the /base_link
     int moveToTargetPose(const geometry_msgs::Pose &pose);
 
+    //!< Move through waypoints along catesian paths
     int moveCatesianPath(const std::vector<geometry_msgs::Pose> &waypoints);
+
+    int getPosNorm(const geometry_msgs::Pose &pose)
+    {
+        return sqrt(pow(pose.position.x, 2) + pow(pose.position.y, 2) + pow(pose.position.z, 2) );
+    }
 
 public:
     PickPlacePlanner() : server_name_("[pick_place]"),
@@ -88,10 +94,6 @@ public:
         // capture the transformation between frames
         this->getTransformation("ee_link", "object_link", grip2ee_tf_);
         this->getTransformation("base_link", "zed_left_camera_frame", camera2arm_tf_);
-
-        // update the object pose
-        min_pose_read_count_ = 5;
-        pose_update_flag_ = false;
 
         // initialize the arm and the gripper
         this->moveToNamedPose("wait");
@@ -158,39 +160,38 @@ geometry_msgs::Pose PickPlacePlanner::getPose()
 {
     ROS_INFO("%s: Capturing the pose...", server_name_.c_str());
 
+    std::list<geometry_msgs::Pose> poses;
+    std::list<double> norms;
+
     ros::Rate rate(10);
-    short pose_read_count = 0;
-    geometry_msgs::Pose object_pose_tmp = object_pose_;
-    object_poses_.clear();
+    double object_norm;
 
-    while (pose_read_count < min_pose_read_count_ && ros::ok())
+    while (poses.size() < 10 && ros::ok())
     {
+        // loop till updating object pose
         pose_update_flag_ = false;
-
         while(ros::ok() && !pose_update_flag_)
-            rate.sleep();    
+            rate.sleep();
+        
+        object_norm = this->getPosNorm(object_pose_);
 
-        if (fabs(object_pose_.position.x - object_pose_tmp.position.x) < 0.05 &&
-            fabs(object_pose_.position.y - object_pose_tmp.position.y) < 0.05 &&
-            fabs(object_pose_.position.z - object_pose_tmp.position.z) < 0.05)
+        if (poses.size() == 0)
         {
-            pose_read_count++;
-            // object_poses_.push_back(object_pose_);
+            poses.push_back(object_pose_);
+            norms.push_back(object_norm);
         }
-        else
+        else if (fabs(object_norm - norms.front()) < 0.1 )
         {
-            object_pose_tmp = object_pose_;
-            pose_read_count = 1;
-            object_poses_.clear();
-            // object_poses_.push_back(object_pose_);
+
         }
 
-        object_poses_.push_back(object_pose_);
+        // 
+
         rate.sleep();
     }
 
-    // return object_pose_;
-    return averagePoses(object_poses_);
+    return object_pose_;
+    // return averagePoses(object_poses_);
 }
 
 geometry_msgs::Pose PickPlacePlanner::averagePoses(const std::vector<geometry_msgs::Pose> &poses)
