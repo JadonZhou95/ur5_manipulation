@@ -136,6 +136,10 @@ add_executable(pick_and_place_node src/pick_place.cpp)
 target_link_libraries(pick_and_place_node ${catkin_LIBRARIES})
 
 
+add_executable(pick_and_place_follow_node src/pick_place_follow.cpp)
+target_link_libraries(pick_and_place_follow_node ${catkin_LIBRARIES})
+
+
 add_executable(posearray_publish_node src/posearray_publish.cpp)
 target_link_libraries(posearray_publish_node ${catkin_LIBRARIES})
 ## Declare a C++ library
