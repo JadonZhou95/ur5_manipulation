@@ -2,5 +2,5 @@
     <node pkg="tf" type="static_transform_publisher" name="gripper_link_bc" args="0.25 0 0 0.153046 -0.690346 -0.153046 0.690345 /ee_link gripper_link 100" />
     <!-- <node pkg="tf" type="static_transform_publisher" name="object_link_bc" args="0 0 0 0.707107 0 -0.707107 0 /gripper_link object_link 100" /> -->
     <node pkg="tf" type="static_transform_publisher" name="object_link_bc" args="0 0 0 0 -0.707107 0 -0.707107 /gripper_link object_link 100" />
-    <node pkg="tf" type="static_transform_publisher" name="camera_link_bc" args="0.65 0.025 0.68 0 0.7071068 0 0.7071068 /base_link camera_link 100" />
+    <node pkg="tf" type="static_transform_publisher" name="camera_link_bc" args="0.71 0.05 0.74 0 0.728371 0 0.685183 /base_link camera_link 100" />
 </launch>

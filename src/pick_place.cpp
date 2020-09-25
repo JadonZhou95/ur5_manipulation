@@ -1,8 +1,8 @@
 #include <cmath>
 #include <list>
+#include <algorithm> 
 
 #include "ros/ros.h"
-
 #include "moveit/move_group_interface/move_group_interface.h"
 #include "moveit/planning_scene_interface/planning_scene_interface.h"
 
@@ -45,7 +45,7 @@ private:
     //!< The pose is identified only if it remains unchanged for a few readings
     geometry_msgs::Pose getPose();
     void poseCb(const geometry_msgs::PoseArrayConstPtr p_poses);
-    geometry_msgs::Pose averagePoses(const std::vector<geometry_msgs::Pose> &poses);
+    geometry_msgs::Pose averagePoses(const std::vector<geometry_msgs::Pose> &poses, const std::vector<int> ids, const int mean_id);
 
     //!< Control the gripper
     void controlGripper(const std::string &cmd, double wait_time=3.0);
@@ -71,7 +71,12 @@ private:
     //!< Move through waypoints along catesian paths
     int moveCatesianPath(const std::vector<geometry_msgs::Pose> &waypoints);
 
-    int getPosNorm(const geometry_msgs::Pose &pose)
+    int reject_pose_outliers(std::vector<geometry_msgs::Pose> &poses, std::vector<double> &norms, std::vector<int> &ids);
+
+    template <class Type>
+    void list2Vector(const std::list<Type> &l, std::vector<Type> &v);
+
+    double getPosNorm(const geometry_msgs::Pose &pose)
     {
         return sqrt(pow(pose.position.x, 2) + pow(pose.position.y, 2) + pow(pose.position.z, 2) );
     }
@@ -94,6 +99,14 @@ public:
         // capture the transformation between frames
         this->getTransformation("ee_link", "object_link", grip2ee_tf_);
         this->getTransformation("base_link", "zed_left_camera_frame", camera2arm_tf_);
+        //this->getTransformation("base_link", "camera_link", camera2arm_tf_);
+        // camera2arm_tf_.transform.translation.x = 0;
+        // camera2arm_tf_.transform.translation.y = 0;
+        // camera2arm_tf_.transform.translation.z = 0;
+        // camera2arm_tf_.transform.rotation.x = 0;
+        // camera2arm_tf_.transform.rotation.y = 0;
+        // camera2arm_tf_.transform.rotation.z = 0;
+        // camera2arm_tf_.transform.rotation.w = 1;
 
         // initialize the arm and the gripper
         this->moveToNamedPose("wait");
@@ -135,7 +148,7 @@ void PickPlacePlanner::pick(const geometry_msgs::Pose &pose)
     // move to grasp pose
     ROS_INFO("%s: Move to Grasp Pose.", server_name_.c_str() );
     geometry_msgs::Pose grasp_pose = pose;
-    grasp_pose.position.z -= 0.01;
+    grasp_pose.position.z -= 0.02;
     this->transformPoseFromObjectToEE(grasp_pose);
     this->moveCatesianPath(std::vector<geometry_msgs::Pose>({grasp_pose}));
 
@@ -162,11 +175,13 @@ geometry_msgs::Pose PickPlacePlanner::getPose()
 
     std::list<geometry_msgs::Pose> poses;
     std::list<double> norms;
+    std::vector<geometry_msgs::Pose> v_poses;
+    std::vector<double> v_norms;
 
     ros::Rate rate(10);
     double object_norm;
 
-    while (poses.size() < 10 && ros::ok())
+    while (poses.size() < 20 && ros::ok())
     {
         // loop till updating object pose
         pose_update_flag_ = false;
@@ -175,45 +190,44 @@ geometry_msgs::Pose PickPlacePlanner::getPose()
         
         object_norm = this->getPosNorm(object_pose_);
 
-        if (poses.size() == 0)
-        {
-            poses.push_back(object_pose_);
-            norms.push_back(object_norm);
-        }
-        else if (fabs(object_norm - norms.front()) < 0.1 )
-        {
+        poses.push_back(object_pose_);
+        norms.push_back(object_norm);
 
+        if (poses.size() > 1 && (fabs(object_norm - norms.front()) > 0.1
+            || fabs(object_pose_.position.x - poses.front().position.x) > 0.1
+            || fabs(object_pose_.position.y - poses.front().position.y) > 0.1
+            || fabs(object_pose_.position.z - poses.front().position.z) > 0.1))
+        {
+            poses.pop_front();
+            norms.pop_front();
         }
-
-        // 
 
         rate.sleep();
     }
 
-    return object_pose_;
-    // return averagePoses(object_poses_);
-}
-
-geometry_msgs::Pose PickPlacePlanner::averagePoses(const std::vector<geometry_msgs::Pose> &poses)
-{
-    geometry_msgs::Pose pose;
-    pose.position.x = 0;
-    pose.position.y = 0;
-    pose.position.z = 0;
-
-    for (size_t i = 0; i < poses.size(); i++)
+    for (auto it = poses.begin(); it != poses.end(); it++)
     {
-        pose.position.x += poses[i].position.x;
-        pose.position.y += poses[i].position.y;
-        pose.position.z += poses[i].position.z;
+        std::cout << it->position.x << " "
+                  << it->position.y << " "
+                  << it->position.z << std::endl;
     }
+    std::cout << std::endl;
 
-    pose.position.x /= poses.size();
-    pose.position.y /= poses.size();
-    pose.position.z /= poses.size();
+    this->list2Vector(poses, v_poses);
+    this->list2Vector(norms, v_norms);
 
-    pose.orientation = poses[0].orientation;
-    return pose;   
+    std::vector<int> ids;
+    int mean_id = this->reject_pose_outliers(v_poses, v_norms, ids);
+    std::cout << mean_id << " " << ids.size() << std::endl;
+    
+    geometry_msgs::Pose avg_pose = this->averagePoses(v_poses, ids, mean_id);
+
+    std::cout << avg_pose.position.x << " "
+              << avg_pose.position.y << " "
+              << avg_pose.position.z << std::endl;
+
+    // return *((((poses.begin()++)++)++)++);
+    return avg_pose;
 }
 
 
@@ -239,6 +253,67 @@ void PickPlacePlanner::poseCb(const geometry_msgs::PoseArrayConstPtr p_poses)
     object_pose_ = top_pose;
     pose_update_flag_ = true;
 }
+
+
+int PickPlacePlanner::reject_pose_outliers(std::vector<geometry_msgs::Pose> &poses, std::vector<double> &norms, std::vector<int> &ids)
+{
+    std::vector<double> values = norms;
+    std::sort(values.begin(), values.end());
+    double mean = values[4];
+
+    int mean_id(0), id(0);
+    
+    double std_var(0), var(0);
+    for (auto it = norms.begin(); it != norms.end(); it++)
+    {
+        var += pow(*it - mean, 2);
+
+        if (fabs(*it - mean) < 0.00001)
+            mean_id = id;
+
+        id++;
+    }
+    var /= norms.size();
+    std_var = sqrt(var);
+
+    id = 0;
+    for (auto it = norms.begin(); it != norms.end(); it++)
+    {
+        if (fabs(mean - *it) <= 2 * std_var + 0.00001)
+        {
+            ids.push_back(id);
+        }
+        id++;
+    }
+
+    return mean_id;
+}
+
+
+geometry_msgs::Pose PickPlacePlanner::averagePoses(const std::vector<geometry_msgs::Pose> &poses, const std::vector<int> ids, const int mean_id)
+{
+    geometry_msgs::Pose avg_pose;
+    avg_pose.position.x = 0;
+    avg_pose.position.y = 0;
+    avg_pose.position.z = 0;
+    
+    avg_pose.orientation = poses[mean_id].orientation;
+
+    for (size_t i = 0; i < ids.size(); i++)
+    {
+        auto it = poses.begin() + ids[i];        
+        avg_pose.position.x += it->position.x;
+        avg_pose.position.y += it->position.y;
+        avg_pose.position.z += it->position.z;
+    }
+
+    avg_pose.position.x /= ids.size();
+    avg_pose.position.y /= ids.size();
+    avg_pose.position.z /= ids.size();
+
+    return avg_pose;
+}
+
 
 void PickPlacePlanner::getTransformation(const std::string &target_frame,
                                          const std::string &parent_frame,
@@ -376,7 +451,7 @@ int PickPlacePlanner::moveCatesianPath(const std::vector<geometry_msgs::Pose> &w
     return 0;
 }
 
-void PickPlacePlanner::controlGripper(const std::string &cmd, double wait_time=3.0)
+void PickPlacePlanner::controlGripper(const std::string &cmd, double wait_time)
 {
     robotiq_3f_gripper_articulated_msgs::Robotiq3FGripperRobotControl ser;
     ser.request.command = cmd;
@@ -408,6 +483,13 @@ void PickPlacePlanner::pinchGripper()
 {
     ROS_INFO("Set Gripper in Mode Pinch");
     this->controlGripper("p");
+}
+
+template <class Type>
+void PickPlacePlanner::list2Vector(const std::list<Type> &l, std::vector<Type> &v)
+{
+    for (auto it = l.begin(); it != l.end(); it++)
+        v.push_back(*it);
 }
 
 int main(int argc, char **argv)
