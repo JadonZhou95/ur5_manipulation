@@ -106,6 +106,11 @@ public:
         this->activateGripper();
         this->pinchGripper();
 
+        // tf2::Quaternion a(0, -0.707107, 0, -0.707107);
+        // tf2::Quaternion b(1, 0, 0, 0);
+        // a = a * b;
+        // std::cout << a.x() << " " << a.y() << " " << a.z() << " " << a.w() << std::endl;
+
         ROS_INFO("%s: Ready!", server_name_.c_str());
 
         // main operation loop
@@ -144,7 +149,7 @@ int PickPlacePlanner::pick(const geometry_msgs::Pose &pose)
     // move to grasp pose
     ROS_INFO("%s: Move to Grasp Pose.", server_name_.c_str() );
     geometry_msgs::Pose grasp_pose = pose;
-    grasp_pose.position.z -= 0.02;
+    grasp_pose.position.z -= 0.04;
     this->transformPoseFromObjectToEE(grasp_pose);
     if (this->moveCatesianPath(std::vector<geometry_msgs::Pose>({grasp_pose})))
         return -1;

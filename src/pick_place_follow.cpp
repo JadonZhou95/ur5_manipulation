@@ -127,7 +127,7 @@ public:
                     break;
                 }
 
-                ros::Duration(10).sleep();
+                // ros::Duration(10).sleep();
                 geometry_msgs::Pose object_pose_old = object_pose;
                 if (this->getPose(object_pose))
                     break;
@@ -189,7 +189,7 @@ int PickPlacePlanner::grasp(const geometry_msgs::Pose &pose)
     // move to grasp pose
     ROS_INFO("%s: Move to Grasp Pose.", server_name_.c_str() );
     geometry_msgs::Pose grasp_pose = pose;
-    grasp_pose.position.z -= 0.02;
+    grasp_pose.position.z -= 0.04;
     this->transformPoseFromObjectToEE(grasp_pose);
     if(this->moveCatesianPath(std::vector<geometry_msgs::Pose>({grasp_pose})))
         return -1;
@@ -235,7 +235,7 @@ int PickPlacePlanner::getPose(geometry_msgs::Pose &out_pose)
         while(ros::ok() && !pose_update_flag_)
         {
             double current_time = ros::Time::now().toSec();
-            if (current_time - start_time > 1 || current_time - zero_time > 5)
+            if (current_time - start_time > 3 || current_time - zero_time > 6)
                 return -1;
             rate.sleep();
         }
